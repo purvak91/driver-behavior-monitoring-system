@@ -1,0 +1,46 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project Tracker
+PROJECT_TRACKER.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Models & Media
+*.pt
+*.onnx
+*.weights
+*.mp4
+*.mkv
+*.avi
+uploads/
+evidence_images/
+
+# OS
+.DS_Store
+Thumbs.db
