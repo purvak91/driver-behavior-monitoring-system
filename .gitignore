@@ -44,3 +44,8 @@ evidence_images/
 # OS
 .DS_Store
 Thumbs.db
+
+# Work distribution among the team
+Task.md
+Walkthrough.md
+Implementaion_Plan.md
