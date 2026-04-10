@@ -1,7 +1,11 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
 opencv-python
 ultralytics
 easyocr
 python-dotenv
+requests
+numpy
+pydantic
+websockets
