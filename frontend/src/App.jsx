@@ -1,120 +1,232 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
+const API_BASE = 'http://127.0.0.1:8000'
+const WS_URL = 'ws://127.0.0.1:8000/api/live-feed'
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [stats, setStats] = useState(null)
+  const [leaderboard, setLeaderboard] = useState([])
+  const [liveFeed, setLiveFeed] = useState([])
+  const [isOnline, setIsOnline] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const wsRef = useRef(null)
+
+  // ─── Fetch stats & leaderboard ───
+  const fetchData = async () => {
+    try {
+      const [statsRes, lbRes, activityRes] = await Promise.all([
+        fetch(`${API_BASE}/api/stats`),
+        fetch(`${API_BASE}/api/leaderboard?limit=20`),
+        fetch(`${API_BASE}/api/recent-activity?limit=20`),
+      ])
+
+      if (statsRes.ok) setStats(await statsRes.json())
+      if (lbRes.ok) setLeaderboard(await lbRes.json())
+      if (activityRes.ok) {
+        const activity = await activityRes.json()
+        setLiveFeed(activity.map(a => ({
+          type: 'detection',
+          plate_number: a.plate_number,
+          timestamp: a.timestamp,
+          safety_score: a.safety_score,
+        })))
+      }
+      setIsOnline(true)
+      setLoading(false)
+    } catch {
+      setIsOnline(false)
+      setLoading(false)
+    }
+  }
+
+  // ─── WebSocket for live updates ───
+  const connectWebSocket = () => {
+    try {
+      const ws = new WebSocket(WS_URL)
+      wsRef.current = ws
+
+      ws.onopen = () => setIsOnline(true)
+      ws.onclose = () => {
+        setIsOnline(false)
+        setTimeout(connectWebSocket, 3000) // auto-reconnect
+      }
+      ws.onerror = () => setIsOnline(false)
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        // Add to live feed (top of list, max 30 items)
+        setLiveFeed(prev => [data, ...prev].slice(0, 30))
+        // Refresh stats & leaderboard on new data
+        fetchData()
+      }
+    } catch {
+      setTimeout(connectWebSocket, 3000)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+    connectWebSocket()
+    // Periodic polling fallback every 8s
+    const interval = setInterval(fetchData, 8000)
+    return () => {
+      clearInterval(interval)
+      if (wsRef.current) wsRef.current.close()
+    }
+  }, [])
+
+  const getScoreClass = (score) => {
+    if (score >= 85) return 'excellent'
+    if (score >= 65) return 'good'
+    if (score >= 40) return 'warning'
+    return 'danger'
+  }
+
+  const getRankClass = (index) => {
+    if (index === 0) return 'gold'
+    if (index === 1) return 'silver'
+    if (index === 2) return 'bronze'
+    return ''
+  }
+
+  const getRankLabel = (index) => {
+    if (index === 0) return '🥇'
+    if (index === 1) return '🥈'
+    if (index === 2) return '🥉'
+    return `#${index + 1}`
+  }
+
+  const getViolationClass = (count) => {
+    if (count === 0) return 'clean'
+    if (count <= 2) return 'warn'
+    return 'danger'
+  }
+
+  const formatTime = (isoString) => {
+    if (!isoString) return '--:--'
+    const date = new Date(isoString)
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="app">
+      {/* Header */}
+      <header className="header">
+        <div className="header-brand">
+          <div className="logo-icon">🛡️</div>
+          <h1>Driver<span>Guard</span></h1>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
+        <div className="header-status">
+          <div className={`status-badge ${isOnline ? 'online' : 'offline'}`}>
+            <span className="status-dot"></span>
+            {isOnline ? 'Pipeline Active' : 'Pipeline Offline'}
+          </div>
         </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
+      {/* Dashboard */}
+      <main className="dashboard">
+        {/* Stats Grid */}
+        <section className="stats-grid" id="stats-panel">
+          <div className="stat-card">
+            <div className="stat-icon">🚗</div>
+            <div className="stat-label">Tracked Drivers</div>
+            <div className="stat-value">{stats?.total_drivers ?? '—'}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">📡</div>
+            <div className="stat-label">Total Detections</div>
+            <div className="stat-value">{stats?.total_events ?? '—'}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">⚠️</div>
+            <div className="stat-label">Violations</div>
+            <div className="stat-value">{stats?.total_violations ?? '—'}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">⭐</div>
+            <div className="stat-label">Avg Safety Score</div>
+            <div className={`stat-value score`}>{stats?.avg_safety_score ?? '—'}</div>
+          </div>
+        </section>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {/* Main Panels */}
+        <section className="panels">
+          {/* Leaderboard */}
+          <div className="panel" id="leaderboard-panel">
+            <div className="panel-header">
+              <h2><span className="panel-icon">🏆</span> Safety Leaderboard</h2>
+              <span className="panel-badge">{leaderboard.length} drivers</span>
+            </div>
+            <div className="panel-body">
+              {loading ? (
+                <>
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="skeleton skeleton-row" />
+                  ))}
+                </>
+              ) : leaderboard.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">🚦</div>
+                  <p>No drivers detected yet. Start the vision pipeline to begin tracking.</p>
+                </div>
+              ) : (
+                leaderboard.map((driver, index) => (
+                  <div className="leaderboard-row" key={driver.id}>
+                    <span className={`rank ${getRankClass(index)}`}>{getRankLabel(index)}</span>
+                    <div className="plate-info">
+                      <span className="plate-number">{driver.plate_number}</span>
+                      <span className="plate-meta">Last seen {formatTime(driver.last_seen_at)}</span>
+                    </div>
+                    <span className="sightings">👁️ {driver.total_sightings} seen</span>
+                    <span className={`violations ${getViolationClass(driver.violation_count)}`}>
+                      {driver.violation_count === 0 ? '✓ Clean' : `${driver.violation_count} flags`}
+                    </span>
+                    <span className={`score ${getScoreClass(driver.safety_score)}`}>
+                      {driver.safety_score}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+          {/* Live Feed */}
+          <div className="panel" id="live-feed-panel">
+            <div className="panel-header">
+              <h2><span className="panel-icon">📡</span> Live Detections</h2>
+              <span className="panel-badge">LIVE</span>
+            </div>
+            <div className="panel-body">
+              {liveFeed.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">📷</div>
+                  <p>Waiting for detections from the ANPR Vision Pipeline...</p>
+                </div>
+              ) : (
+                liveFeed.map((item, index) => (
+                  <div className="live-feed-item" key={index}>
+                    <div className={`feed-icon ${item.type === 'violation' ? 'violation' : 'detection'}`}>
+                      {item.type === 'violation' ? '🚨' : '🔍'}
+                    </div>
+                    <div className="feed-content">
+                      <div className="feed-plate">{item.plate_number}</div>
+                      <div className="feed-desc">
+                        {item.type === 'violation'
+                          ? `${item.violation_type} — ${item.points_deducted} pts deducted`
+                          : `Detected • Score: ${item.safety_score ?? item.new_score ?? '100'}`}
+                      </div>
+                    </div>
+                    <span className="feed-time">{formatTime(item.timestamp)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
   )
 }
 
