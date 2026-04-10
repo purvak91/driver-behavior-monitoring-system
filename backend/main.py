@@ -234,6 +234,21 @@ def get_recent_activity(limit: int = 15, db: Session = Depends(get_db)):
         })
     return result
 
+@app.delete("/api/driver/{driver_id}")
+def delete_driver(driver_id: int, db: Session = Depends(get_db)):
+    """Admin endpoint to entirely remove a driver and history."""
+    driver = db.query(Driver).filter(Driver.id == driver_id).first()
+    if not driver:
+        return {"status": "error", "message": "Driver not found."}
+    
+    # Delete relationships manually to avoid constraint errors
+    db.query(TrackingEvent).filter(TrackingEvent.driver_id == driver_id).delete()
+    db.query(Violation).filter(Violation.driver_id == driver_id).delete()
+    db.delete(driver)
+    db.commit()
+
+    return {"status": "ok", "message": f"Driver {driver_id} records purged."}
+
 
 # ──────────────────────────── WebSocket Endpoint ───────────────────────────
 @app.websocket("/api/live-feed")

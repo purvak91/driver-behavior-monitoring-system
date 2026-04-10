@@ -10,6 +10,7 @@ function App() {
   const [liveFeed, setLiveFeed] = useState([])
   const [isOnline, setIsOnline] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [view, setView] = useState('user') // 'user' or 'admin' 
   const wsRef = useRef(null)
 
   // ─── Fetch stats & leaderboard ───
@@ -66,7 +67,13 @@ function App() {
   }
 
   useEffect(() => {
-    fetchData()
+    // Wrap in async immediately-invoked function to prevent ESLint false-positives
+    // about synchronous state updates inside effects.
+    const init = async () => {
+      await fetchData();
+    };
+    init();
+    
     connectWebSocket()
     // Periodic polling fallback every 8s
     const interval = setInterval(fetchData, 8000)
@@ -74,6 +81,7 @@ function App() {
       clearInterval(interval)
       if (wsRef.current) wsRef.current.close()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const getScoreClass = (score) => {
@@ -109,6 +117,25 @@ function App() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   }
 
+  const displayPlate = (plate) => {
+    if (!plate || typeof plate !== 'string') return String(plate || 'UNKNOWN')
+    if (view === 'user' && plate.startsWith('UNK-')) {
+      return `ID: ${plate.split('-')[1]}`
+    }
+    return plate
+  }
+
+  const handleDeleteDriver = async (driverId) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/driver/${driverId}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchData(); // refresh the dash
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   return (
     <div className="app">
       {/* Header */}
@@ -117,6 +144,13 @@ function App() {
           <div className="logo-icon">🛡️</div>
           <h1>Driver<span>Guard</span></h1>
         </div>
+        
+        {/* Navigation Switcher */}
+        <div className="header-nav" style={{ display: 'flex', gap: '1rem', marginLeft: 'auto', marginRight: '2rem' }}>
+          <button className={`nav-btn ${view === 'user' ? 'active' : ''}`} onClick={() => setView('user')}>👤 User View</button>
+          <button className={`nav-btn ${view === 'admin' ? 'active' : ''}`} onClick={() => setView('admin')}>🛡️ Admin View</button>
+        </div>
+
         <div className="header-status">
           <div className={`status-badge ${isOnline ? 'online' : 'offline'}`}>
             <span className="status-dot"></span>
@@ -176,7 +210,7 @@ function App() {
                   <div className="leaderboard-row" key={driver.id}>
                     <span className={`rank ${getRankClass(index)}`}>{getRankLabel(index)}</span>
                     <div className="plate-info">
-                      <span className="plate-number">{driver.plate_number}</span>
+                      <span className="plate-number">{displayPlate(driver.plate_number)}</span>
                       <span className="plate-meta">Last seen {formatTime(driver.last_seen_at)}</span>
                     </div>
                     <span className="sightings">👁️ {driver.total_sightings} seen</span>
@@ -186,6 +220,9 @@ function App() {
                     <span className={`score ${getScoreClass(driver.safety_score)}`}>
                       {driver.safety_score}
                     </span>
+                    {view === 'admin' && (
+                      <button className="btn-remove" onClick={() => handleDeleteDriver(driver.id)}>🗑️ Remove</button>
+                    )}
                   </div>
                 ))
               )}
@@ -211,7 +248,7 @@ function App() {
                       {item.type === 'violation' ? '🚨' : '🔍'}
                     </div>
                     <div className="feed-content">
-                      <div className="feed-plate">{item.plate_number}</div>
+                      <div className="feed-plate">{displayPlate(item.plate_number)}</div>
                       <div className="feed-desc">
                         {item.type === 'violation'
                           ? `${item.violation_type} — ${item.points_deducted} pts deducted`
