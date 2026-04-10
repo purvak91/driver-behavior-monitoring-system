@@ -36,6 +36,7 @@ dist-ssr/
 *.onnx
 *.weights
 *.mp4
+*.jpg
 *.mkv
 *.avi
 uploads/
